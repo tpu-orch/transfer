@@ -1,0 +1,33 @@
+services:
+  api:
+    build: .
+    container_name: transfer-api
+    environment:
+      DATABASE_URL: postgresql+psycopg://transfer:transfer@postgres:5432/transfer
+      CURRENCY: RUB
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: transfer-postgres
+    environment:
+      POSTGRES_DB: transfer
+      POSTGRES_USER: transfer
+      POSTGRES_PASSWORD: transfer
+    ports:
+      - "5432:5432"
+    volumes:
+      - transfer-postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transfer -d transfer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  transfer-postgres-data:
