@@ -2,6 +2,9 @@ name: Compose smoke check
 
 on:
   push:
+    branches-ignore: #ignores main because on push in main "publish-image" action starts up this action
+      - main
+  workflow_call:
 
 permissions:
   contents: read
