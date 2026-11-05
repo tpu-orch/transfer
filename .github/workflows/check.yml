@@ -1,0 +1,55 @@
+name: Compose smoke check
+
+on:
+  push:
+    branches-ignore: #ignores main because on push in main "publish-image" action starts up this action
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check out repository
+        uses: actions/checkout@v4
+
+      - name: Create temporary env and start service
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_DB=transfer
+          POSTGRES_USER=transfer
+          POSTGRES_PASSWORD=ci-test-password
+          POSTGRES_PORT=5432
+          DB_HOST=localhost
+          CURRENCY=RUB
+          EOF
+
+          export COMPOSE_PROJECT_NAME="transfer-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker compose up --build --detach
+
+      - name: wait for the API to respond on /docs
+        run: |
+          export COMPOSE_PROJECT_NAME="transfer-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/docs >/dev/null; then
+              echo "API documentation responded successfully."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker compose logs
+          echo "API documentation had not responded within 60 seconds and 30 attempts."
+          exit 1
+
+      - name: stop services and remove test data
+        if: always()
+        run: |
+          export COMPOSE_PROJECT_NAME="transfer-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker compose down --volumes --remove-orphans || true
+          rm -f .env
