@@ -4,9 +4,9 @@ from math import cos, hypot, radians, sqrt
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.config import settings
-from app.models import Area, Tariff
-from app.schemas import TariffQuote, TransferQuoteRequest, TransferQuoteResponse
+from app.core.config import settings
+from app.db.models import Area, Tariff
+from app.api.schemas import TariffQuote, TransferQuoteRequest, TransferQuoteResponse
 
 EARTH_RADIUS_M = 6_371_000.0
 
@@ -27,6 +27,14 @@ def _route_projection(request: TransferQuoteRequest) -> tuple[float, float, floa
 
 
 def _area_interval(area: Area, request: TransferQuoteRequest, route: tuple[float, float, float, float, float]) -> tuple[float, float] | None:
+    """
+    Find the intersection interval of the route segment with a circular area.
+
+    Projects the area center into the local coordinate system of the route,
+    then solves the quadratic equation for intersection of a line segment
+    (the route) with a circle (the area). Returns (t_start, t_end) as
+    fractions along the route [0, 1], or None if no intersection.
+    """
     sx, sy, ex, ey, lat0 = route
     cx = radians(area.longitude - request.start_longitude) * EARTH_RADIUS_M * cos(lat0)
     cy = radians(area.latitude - request.start_latitude) * EARTH_RADIUS_M
