@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, Float, ForeignKey, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.db.session import Base
 
 
 class Area(Base):
@@ -40,10 +40,11 @@ class AreaTariff(Base):
 
 class Booking(Base):
     __tablename__ = "bookings"
-    __table_args__ = (CheckConstraint("booking_status IN ('PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED')"), CheckConstraint("calculated_price >= 0"))
+    __table_args__ = (CheckConstraint("booking_status IN ('PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED')"), CheckConstraint("calculated_price >= 0"), UniqueConstraint("composite_booking_id", name="uq_booking_composite_id"))
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     tariff_id: Mapped[int] = mapped_column(ForeignKey("tariffs.id"), nullable=False)
+    composite_booking_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     start_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     start_latitude: Mapped[float] = mapped_column(Float, nullable=False)
     start_longitude: Mapped[float] = mapped_column(Float, nullable=False)
