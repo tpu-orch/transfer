@@ -38,6 +38,24 @@ jobs:
           DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
           DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
 
+      - name: Check SSH host fingerprint from GitHub runner
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/deploy-host-keys"
+          for attempt in 1 2 3; do
+            ssh-keyscan -T 10 -t ed25519,rsa,ecdsa "$DEPLOY_HOST" > "$key_file" 2>/dev/null
+            echo "Host key fingerprints seen by GitHub runner (probe $attempt):"
+            ssh-keygen -lf "$key_file"
+          done
+          fingerprints="$(ssh-keygen -lf "$key_file" | awk '{print $2}')"
+          if ! printf '%s\n' "$fingerprints" | grep -Fxq "$EXPECTED_FINGERPRINT"; then
+            echo "DEPLOY_SERVER_FINGERPRINT does not match any host key seen by the GitHub runner. Check the server endpoint before updating the Secret." >&2
+            exit 1
+          fi
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          EXPECTED_FINGERPRINT: ${{ secrets.DEPLOY_SERVER_FINGERPRINT }}
+
       - name: Prepare server directory
         uses: appleboy/ssh-action@v1.2.3
         env:
