@@ -41,12 +41,15 @@ jobs:
       - name: Check SSH host fingerprint from GitHub runner
         run: |
           set -euo pipefail
-          key_file="$RUNNER_TEMP/deploy-host-key"
-          ssh-keyscan -T 10 -t ed25519 "$DEPLOY_HOST" > "$key_file" 2>/dev/null
-          observed_fingerprint="$(ssh-keygen -lf "$key_file" | awk '{print $2}')"
-          echo "Fingerprint seen by GitHub runner: $observed_fingerprint"
+          key_file="$RUNNER_TEMP/deploy-host-keys"
+          for attempt in 1 2 3; do
+            ssh-keyscan -T 10 -t ed25519,rsa,ecdsa "$DEPLOY_HOST" > "$key_file" 2>/dev/null
+            echo "Host key fingerprints seen by GitHub runner (probe $attempt):"
+            ssh-keygen -lf "$key_file"
+          done
+          observed_fingerprint="$(ssh-keygen -lf "$key_file" | awk '$NF == "(ED25519)" {print $2; exit}')"
           if [ "$observed_fingerprint" != "$EXPECTED_FINGERPRINT" ]; then
-            echo "This differs from DEPLOY_SERVER_FINGERPRINT. Check the server endpoint or update the Secret only after verifying the key." >&2
+            echo "The runner's ED25519 key differs from DEPLOY_SERVER_FINGERPRINT. Check the server endpoint or update the Secret only after verifying the key." >&2
             exit 1
           fi
         env:
