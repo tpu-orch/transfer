@@ -47,9 +47,9 @@ jobs:
             echo "Host key fingerprints seen by GitHub runner (probe $attempt):"
             ssh-keygen -lf "$key_file"
           done
-          observed_fingerprint="$(ssh-keygen -lf "$key_file" | awk '$NF == "(ED25519)" {print $2; exit}')"
-          if [ "$observed_fingerprint" != "$EXPECTED_FINGERPRINT" ]; then
-            echo "The runner's ED25519 key differs from DEPLOY_SERVER_FINGERPRINT. Check the server endpoint or update the Secret only after verifying the key." >&2
+          fingerprints="$(ssh-keygen -lf "$key_file" | awk '{print $2}')"
+          if ! printf '%s\n' "$fingerprints" | grep -Fxq "$EXPECTED_FINGERPRINT"; then
+            echo "DEPLOY_SERVER_FINGERPRINT does not match any host key seen by the GitHub runner. Check the server endpoint before updating the Secret." >&2
             exit 1
           fi
         env:
