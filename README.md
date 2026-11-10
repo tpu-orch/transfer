@@ -26,5 +26,3 @@ docker compose exec -T postgres sh -c "psql -U transfer -d transfer -f /docker-e
 ```
 
 Переменные подключения к БД, Kafka и валюта задаются в `.env`; пример настроек - в `.env.example`.
-
-Пакеты `app.api`, `app.core`, `app.db`, `app.messaging` и `app.services` разделяют HTTP-схемы, конфигурацию, доступ к данным, Kafka и бизнес-логику.

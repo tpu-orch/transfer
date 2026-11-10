@@ -36,7 +36,7 @@ jobs:
           images: ${{ vars.DOCKERHUB_NAMESPACE }}/${{ vars.DOCKERHUB_REPOSITORY }}
           tags: |
             type=raw,value=latest
-            type=sha,format=long
+            type=sha,format=long,prefix=sha-
 
       - name: Build and push image
         uses: docker/build-push-action@v7
