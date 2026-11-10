@@ -1,0 +1,96 @@
+name: deploy to server
+
+on:
+  workflow_run:
+    workflows: ["build and publish Docker image"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the published commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Check deployment settings
+        run: |
+          test -n "$DEPLOY_HOST" || { echo "Set the DEPLOY_HOST repository variable." >&2; exit 1; }
+          test -n "$DEPLOY_PASSWORD" || { echo "Set the DEPLOY_PASSWORD repository secret." >&2; exit 1; }
+          test -n "$DEPLOY_SERVER_FINGERPRINT" || { echo "Set the DEPLOY_SERVER_FINGERPRINT repository secret." >&2; exit 1; }
+          test -n "$DOCKERHUB_NAMESPACE" || { echo "Set the DOCKERHUB_NAMESPACE repository variable." >&2; exit 1; }
+          test -n "$DOCKERHUB_REPOSITORY" || { echo "Set the DOCKERHUB_REPOSITORY repository variable." >&2; exit 1; }
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_SERVER_FINGERPRINT: ${{ secrets.DEPLOY_SERVER_FINGERPRINT }}
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+
+      - name: Prepare server directory
+        uses: appleboy/ssh-action@v1.2.3
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/transfer' }}
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER || 'root' }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ secrets.DEPLOY_SERVER_FINGERPRINT }}
+          envs: DEPLOY_PATH
+          script: |
+            set -eu
+            mkdir -p "$DEPLOY_PATH"
+            if [ ! -f "$DEPLOY_PATH/.env" ]; then
+              echo "Create $DEPLOY_PATH/.env with the production settings before deploying." >&2
+              exit 1
+            fi
+
+      - name: Upload production Compose files
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER || 'root' }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ secrets.DEPLOY_SERVER_FINGERPRINT }}
+          source: docker-compose.prod.yml,db
+          target: ${{ vars.DEPLOY_PATH || '/opt/transfer' }}
+
+      - name: Pull and restart the published image
+        uses: appleboy/ssh-action@v1.2.3
+        env:
+          IMAGE_REF: ${{ vars.DOCKERHUB_NAMESPACE }}/${{ vars.DOCKERHUB_REPOSITORY }}:sha-${{ github.event.workflow_run.head_sha }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/transfer' }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER || 'root' }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
+          fingerprint: ${{ secrets.DEPLOY_SERVER_FINGERPRINT }}
+          envs: IMAGE_REF,DEPLOY_PATH,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
+          command_timeout: 10m
+          script: |
+            set -eu
+            cd "$DEPLOY_PATH"
+
+            if [ -n "$DOCKERHUB_TOKEN" ]; then
+              printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+              trap 'docker logout >/dev/null 2>&1 || true' EXIT
+            fi
+
+            IMAGE_REF="$IMAGE_REF" docker compose -f docker-compose.prod.yml pull api
+            IMAGE_REF="$IMAGE_REF" docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
